@@ -14,12 +14,12 @@ Identifies the most valuable influencer accounts on a large social follow graph 
 
 ## Team Structure
 
-| Team | Component | Language |
+| Group | Component | Language |
 |---|---|---|
-| Team 1 | Preprocessor & data pipeline | Python |
-| Team 2 | Networking layer (TCP framing, peer mesh) | C++ |
-| Team 3 | Coordinator process | C++ |
-| Team 4 | Worker process & PageRank core | C++ |
+| Group A | Worker process & PageRank core | C++ |
+| Group B | Networking layer (TCP framing, peer mesh, coordinator or all-reduce) | C++ |
+| Group C | Preprocessor & data pipeline | Python |
+| Group D | Build system, experiments, integration | CMake / Python |
 
 ---
 
@@ -28,15 +28,18 @@ Identifies the most valuable influencer accounts on a large social follow graph 
 ```
 Distributed-Page-Ranking/
 ├── README.md
+├── CONTRIBUTING.md              # Coding standards, git workflow, PR policy
 ├── .gitignore
 ├── docs/
-│   ├── architecture.md          # Full system design document
-│   ├── hardware-architecture.md # Hardware topology and data flow diagrams
-│   ├── infra-requirements.md    # Infrastructure, storage, network, MacBook setup
-│   ├── team1-preprocessor.md   # Team 1 spec and deliverables
-│   ├── team2-networking.md     # Team 2 spec and deliverables
-│   ├── team3-coordinator.md    # Team 3 spec and deliverables
-│   └── team4-worker.md         # Team 4 spec and deliverables
+│   ├── architecture.md          # Original full system design document
+│   ├── hardware-architecture.md # Hardware topology and per-iteration flow diagrams
+│   ├── infra-requirements.md    # Storage, network, MacBook setup, pre-demo checklist
+│   ├── process-flow.md          # System lifecycle, state machines, data flow
+│   ├── option-a-coordinator.md  # Architecture option: N=8 workers + coordinator
+│   ├── option-b-leaderless.md   # Architecture option: N=4 workers, no coordinator
+│   ├── data-pipeline.md         # Group C spec: preprocessor, file format, postprocess
+│   ├── networking-layer.md      # Group B spec: TCP framing, message protocol, mesh
+│   └── worker-core.md           # Group A spec: partition loader, PageRank loop
 ├── src/                         # C++ source (coordinator, worker, net/)
 ├── scripts/                     # Python scripts (preprocessor, postprocess, etc.)
 └── data/                        # gitignored — partition files, raw dataset
@@ -225,12 +228,26 @@ See [docs/infra-requirements.md](docs/infra-requirements.md) for full hardware s
 
 ## Documentation
 
+### Architecture Decision (choose one before May 9)
+
 | Document | Description |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | Full system design — algorithm, protocol, data flow |
+| [docs/option-a-coordinator.md](docs/option-a-coordinator.md) | Option A: N=8 workers + coordinator, 9 machines, lower risk |
+| [docs/option-b-leaderless.md](docs/option-b-leaderless.md) | Option B: N=4 workers, no coordinator, all-reduce, 4 machines |
+
+### Design Reference
+
+| Document | Description |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Original full system design document |
 | [docs/hardware-architecture.md](docs/hardware-architecture.md) | Hardware topology and per-iteration flow diagrams |
 | [docs/infra-requirements.md](docs/infra-requirements.md) | Storage, network, MacBook setup, pre-demo checklist |
-| [docs/team1-preprocessor.md](docs/team1-preprocessor.md) | Preprocessor spec, file format contract, deliverables |
-| [docs/team2-networking.md](docs/team2-networking.md) | TCP layer, message protocol, mesh setup |
-| [docs/team3-coordinator.md](docs/team3-coordinator.md) | Coordinator spec, BSP loop, aggregation |
-| [docs/team4-worker.md](docs/team4-worker.md) | Worker spec, iteration loop, PageRank formula |
+| [docs/process-flow.md](docs/process-flow.md) | System lifecycle, state machines, per-iteration data flow |
+
+### Component Specs
+
+| Document | Description |
+|---|---|
+| [docs/data-pipeline.md](docs/data-pipeline.md) | Group C: preprocessor, binary format contract, postprocess |
+| [docs/networking-layer.md](docs/networking-layer.md) | Group B: TCP framing, message protocol, peer mesh |
+| [docs/worker-core.md](docs/worker-core.md) | Group A: partition loader, PageRank iteration loop, top-K |

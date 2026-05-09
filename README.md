@@ -56,9 +56,11 @@ Twitter-2010 follow graph published by SNAP (Stanford):
 | `twitter-2010.txt.gz` | 5.6 GB | Edge list (compressed) |
 | `twitter-2010-ids.csv.gz` | ~0.3 GB | Node ID → Twitter ID mapping |
 
-Download both files before running preprocessing. The full graph is never decompressed to disk — the preprocessor streams through the gzip file.
+Download both files before running preprocessing.
 
-For development and testing, use the SNAP Pokec dataset (~260 MB) as a smaller substitute.
+**Memory warning:** the preprocessor reads the gzip file line-by-line but stores the entire edge list in a Python dict in RAM before writing partitions. For the full Twitter-2010 graph (~1.47B edges) this requires ~40–60 GB of RAM. A streaming/sort-based rewrite is required before the full graph can be preprocessed on typical hardware.
+
+For development and testing, use the sample graph in `data/sample/` (bundled) or the SNAP Pokec dataset (~260 MB).
 
 ---
 
@@ -73,19 +75,18 @@ xcode-select --install      # gives clang++, make, git
 # Linux
 sudo apt install g++ make git
 
-# Python (preprocessing machine only)
-pip3 install networkx
+# Python scripts (preprocessor, postprocess, monitoring) use stdlib only — no pip installs needed
 ```
 
 ### Build
 
 ```bash
-mkdir build && cd build
-cmake ..
-make -j4
-
-# or with make directly
+# Primary: plain make from repo root
 make all
+# Outputs: build/coordinator  build/worker
+
+# Alternative: CMake (requires cmake ≥ 3.16)
+cmake -S . -B build && cmake --build build -j4
 ```
 
 ### Quickest verified run (localhost, sample graph)
@@ -100,33 +101,42 @@ Builds both binaries, preprocesses `data/sample/twitter_sample_snap.txt`, starts
 
 ## Quick Start
 
+> **Verified configuration:** N=4 workers, coordinator-based, localhost only.
+> The N=8 multi-machine path is aspirational — it has not been end-to-end tested.
+
 ### Step 1 — Preprocess the graph (one-time, offline)
 
-Run on any machine with 30 GB free disk:
-
 ```bash
+# Tested: sample graph bundled in repo
+python3 scripts/preprocessor.py \
+    --input  data/sample/twitter_sample_snap.txt \
+    --workers 4 \
+    --output-dir data/partitions/
+
+# Untested at scale: full Twitter-2010 graph (requires ~40–60 GB RAM — see Dataset note)
 python3 scripts/preprocessor.py \
     --input  data/twitter-2010.txt.gz \
     --workers 4 \
     --output-dir data/partitions/
+```
 
-# Copy each partition file to its worker machine
+Copy each partition to its worker machine:
+
+```bash
 scp data/partitions/partition_0.bin user@192.168.1.11:~/partition_0.bin
 scp data/partitions/partition_1.bin user@192.168.1.12:~/partition_1.bin
 scp data/partitions/partition_2.bin user@192.168.1.13:~/partition_2.bin
 scp data/partitions/partition_3.bin user@192.168.1.14:~/partition_3.bin
-scp data/partitions/partition_4.bin user@192.168.1.15:~/partition_4.bin
-scp data/partitions/partition_5.bin user@192.168.1.16:~/partition_5.bin
-scp data/partitions/partition_6.bin user@192.168.1.17:~/partition_6.bin
-scp data/partitions/partition_7.bin user@192.168.1.18:~/partition_7.bin
 ```
 
-### Step 2 — Edit cluster.conf
+### Step 2 — Create cluster.conf
+
+Use `cluster.local.conf` as a template. For a 4-worker cluster on static IPs:
 
 ```ini
 coordinator_host = 192.168.1.10
 coordinator_port = 9000
-num_workers      = 8
+num_workers      = 4
 damping_factor   = 0.85
 convergence_threshold = 1e-6
 max_iterations   = 100
@@ -147,50 +157,30 @@ port = 9003
 [worker_3]
 host = 192.168.1.14
 port = 9004
-
-[worker_4]
-host = 192.168.1.15
-port = 9005
-
-[worker_5]
-host = 192.168.1.16
-port = 9006
-
-[worker_6]
-host = 192.168.1.17
-port = 9007
-
-[worker_7]
-host = 192.168.1.18
-port = 9008
 ```
 
 ### Step 3 — Start the cluster
 
-Start the coordinator first, then workers in any order:
+Binaries are output to `build/` and require `--output-dir`. Start coordinator first:
 
 ```bash
 # On coordinator machine (192.168.1.10)
-./coordinator --config cluster.conf
+./build/coordinator --config cluster.conf --output-dir ./output/
 
 # On each worker machine (run in separate terminals / SSH sessions)
-./worker --id 0 --config cluster.conf --partition partition_0.bin
-./worker --id 1 --config cluster.conf --partition partition_1.bin
-./worker --id 2 --config cluster.conf --partition partition_2.bin
-./worker --id 3 --config cluster.conf --partition partition_3.bin
-./worker --id 4 --config cluster.conf --partition partition_4.bin
-./worker --id 5 --config cluster.conf --partition partition_5.bin
-./worker --id 6 --config cluster.conf --partition partition_6.bin
-./worker --id 7 --config cluster.conf --partition partition_7.bin
+./build/worker --id 0 --config cluster.conf --partition partition_0.bin --output-dir ./output/
+./build/worker --id 1 --config cluster.conf --partition partition_1.bin --output-dir ./output/
+./build/worker --id 2 --config cluster.conf --partition partition_2.bin --output-dir ./output/
+./build/worker --id 3 --config cluster.conf --partition partition_3.bin --output-dir ./output/
 ```
 
 ### Step 4 — Post-process results
 
 ```bash
 python3 scripts/postprocess.py \
-    --top-k      top_k.txt \
-    --id-map     data/twitter-2010-ids.csv.gz \
-    --output     top_influencers.txt
+    --top-k  output/top_k.txt \
+    --id-map data/twitter-2010-ids.csv.gz \
+    --output output/top_influencers.txt
 ```
 
 ---
@@ -206,10 +196,6 @@ All runtime machines connected via **Gigabit Ethernet switch** (no Wi-Fi). Set s
 | Worker 1 | 192.168.1.12 |
 | Worker 2 | 192.168.1.13 |
 | Worker 3 | 192.168.1.14 |
-| Worker 4 | 192.168.1.15 |
-| Worker 5 | 192.168.1.16 |
-| Worker 6 | 192.168.1.17 |
-| Worker 7 | 192.168.1.18 |
 
 Verify connectivity before starting:
 
@@ -225,12 +211,30 @@ See [docs/infra-requirements.md](docs/infra-requirements.md) for full hardware s
 
 ## Outputs
 
+All outputs are written to the directory passed via `--output-dir`.
+
 | File | Description |
 |---|---|
-| `result_worker_K.txt` | Final rank of every vertex on worker K |
-| `top_k.txt` | Global top-100 vertices by PageRank score |
-| `top_influencers.txt` | Top-100 with original Twitter IDs |
-| `iteration_log.csv` | Per-iteration timings and convergence delta |
+| `result_worker_K.txt` | Final rank of every vertex owned by worker K |
+| `top_k.txt` | Global top-K vertices by PageRank score |
+| `top_influencers.txt` | Top-K with original Twitter IDs (requires postprocess.py) |
+| `iteration_log.csv` | Per-iteration convergence delta and total wall time |
+| `worker_metrics.csv` | Per-worker per-iteration breakdown: compute\_ms, exchange\_ms, apply\_ms, bytes sent, memory MB |
+
+## Monitoring
+
+Two optional scripts for live visibility during a run:
+
+```bash
+# On each worker machine — start before the worker binary
+python3 scripts/monitoring_agent.py --id 0 --log-dir output/
+# Serves GET /metrics and GET /history on port 9200+worker_id (no external deps)
+
+# On any machine — live terminal dashboard polling all agents
+python3 scripts/monitor.py --config cluster.conf
+```
+
+The agent logs system CPU%, memory, and network throughput to `agent_{id}.csv` every second and exposes a JSON HTTP endpoint for the dashboard.
 
 ---
 

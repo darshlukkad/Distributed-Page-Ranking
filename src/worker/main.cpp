@@ -5,7 +5,12 @@
 
 #include <signal.h>
 
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif
+
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -53,6 +58,34 @@ void expect_type(const Message& message, MsgType expected, const std::string& co
     }
 }
 
+static std::uint32_t rss_mb() {
+#ifdef __APPLE__
+    mach_task_basic_info_data_t info{};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS) {
+        return static_cast<std::uint32_t>(info.resident_size / (1024ULL * 1024ULL));
+    }
+    return 0;
+#else
+    std::ifstream f("/proc/self/status");
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.substr(0, 6) == "VmRSS:") {
+            std::uint64_t kb = 0;
+            std::sscanf(line.c_str(), "VmRSS: %llu kB", &kb);
+            return static_cast<std::uint32_t>(kb / 1024);
+        }
+    }
+    return 0;
+#endif
+}
+
+using Clock = std::chrono::steady_clock;
+static double ms_since(Clock::time_point t) {
+    return std::chrono::duration<double, std::milli>(Clock::now() - t).count();
+}
+
 RankArrays init_rank_arrays(const Partition& partition) {
     RankArrays arrays;
     const auto local_vertices = static_cast<size_t>(partition.num_local_vertices);
@@ -90,12 +123,18 @@ std::unordered_map<std::uint32_t, int> setup_mesh(std::uint32_t worker_id,
     return peer_fds;
 }
 
-void run_iteration(std::uint32_t iteration,
-                   const Partition& partition,
-                   RankArrays& arrays,
-                   const std::unordered_map<std::uint32_t, int>& peer_fds,
-                   int coordinator_fd,
-                   double damping_factor) {
+WorkerMetrics run_iteration(std::uint32_t iteration,
+                            const Partition& partition,
+                            RankArrays& arrays,
+                            const std::unordered_map<std::uint32_t, int>& peer_fds,
+                            int coordinator_fd,
+                            double damping_factor) {
+    WorkerMetrics metrics{};
+    metrics.worker_id = partition.worker_id;
+    metrics.iteration = iteration;
+
+    // ── Phase 1: local vertex walk ────────────────────────────────────────────
+    const auto t_compute = Clock::now();
     double local_dangling_mass = 0.0;
 
     for (std::uint64_t index = 0; index < partition.num_local_vertices; ++index) {
@@ -122,12 +161,17 @@ void run_iteration(std::uint32_t iteration,
         }
     }
 
-    // Serialize all outboxes before any sends.
+    metrics.compute_ms = ms_since(t_compute);
+
+    // ── Phase 2: CONTRIBS round-robin exchange ────────────────────────────────
+    const auto t_exchange = Clock::now();
+
     std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> serialized;
     for (const auto& [peer_id, fd] : peer_fds) {
         (void)fd;
         serialized[peer_id] = serialize_contribs(iteration, arrays.outboxes[peer_id]);
         arrays.outboxes[peer_id].clear();
+        metrics.contribs_bytes += serialized[peer_id].size() + 5; // +5 for frame header
     }
 
     // Round-robin exchange: in round r, worker i sends to (i+r)%N and receives
@@ -154,6 +198,8 @@ void run_iteration(std::uint32_t iteration,
         }
     }
 
+    metrics.exchange_ms = ms_since(t_exchange);
+
     send_message(coordinator_fd,
                  MsgType::DANGLING_REPORT,
                  serialize_iteration_value(iteration, local_dangling_mass));
@@ -162,6 +208,9 @@ void run_iteration(std::uint32_t iteration,
     expect_type(dangling_message, MsgType::GLOBAL_DANGLING, "global dangling receive");
     const auto [dangling_iteration, global_dangling] = deserialize_iteration_value(dangling_message.payload);
     require(dangling_iteration == iteration, "global dangling iteration mismatch");
+
+    // ── Phase 3: apply PageRank formula ──────────────────────────────────────
+    const auto t_apply = Clock::now();
 
     const double total_vertices = static_cast<double>(partition.total_global_vertices);
     const double teleport = (1.0 - damping_factor) / total_vertices;
@@ -175,12 +224,17 @@ void run_iteration(std::uint32_t iteration,
         local_delta += std::fabs(arrays.rank_next[local_index] - arrays.rank_current[local_index]);
     }
 
+    metrics.apply_ms  = ms_since(t_apply);
+    metrics.memory_mb = rss_mb();
+
     send_message(coordinator_fd,
                  MsgType::DELTA_REPORT,
                  serialize_iteration_value(iteration, local_delta));
 
     std::swap(arrays.rank_current, arrays.rank_next);
     std::fill(arrays.incoming.begin(), arrays.incoming.end(), 0.0);
+
+    return metrics;
 }
 
 std::vector<TopKEntry> compute_local_topk(const Partition& partition,
@@ -268,7 +322,8 @@ int run(int argc, char** argv) {
         const Message message = recv_message(coordinator_fd);
         if (message.type == MsgType::START_ITERATION) {
             const auto iteration = deserialize_start_iteration(message.payload);
-            run_iteration(iteration, partition, arrays, peer_fds, coordinator_fd, config.damping_factor);
+            const auto metrics = run_iteration(iteration, partition, arrays, peer_fds, coordinator_fd, config.damping_factor);
+            send_message(coordinator_fd, MsgType::METRICS, serialize_worker_metrics(metrics));
             continue;
         }
 

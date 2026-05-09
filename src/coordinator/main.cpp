@@ -139,7 +139,10 @@ int run(int argc, char** argv) {
     }
 
     std::ofstream log_csv(std::filesystem::path(output_dir) / "iteration_log.csv");
-    log_csv << "iteration,global_delta,global_dangling,compute_contribs_ms,apply_formula_ms,total_ms\n";
+    log_csv << "iteration,global_delta,global_dangling,total_ms\n";
+
+    std::ofstream metrics_csv(std::filesystem::path(output_dir) / "worker_metrics.csv");
+    metrics_csv << "iteration,worker_id,compute_ms,exchange_ms,apply_ms,contribs_bytes,memory_mb\n";
 
     for (std::uint32_t iteration = 1; iteration <= config.max_iterations; ++iteration) {
         const auto start = std::chrono::steady_clock::now();
@@ -154,9 +157,6 @@ int run(int argc, char** argv) {
             global_dangling += dangling;
         }
 
-        // phase1: START_ITERATION → all DANGLING_REPORTs received (worker compute + CONTRIBS exchange)
-        const auto after_dangling = std::chrono::steady_clock::now();
-
         broadcast(workers,
                   MsgType::GLOBAL_DANGLING,
                   serialize_iteration_value(iteration, global_dangling));
@@ -170,22 +170,56 @@ int run(int argc, char** argv) {
             global_delta += delta;
         }
 
-        const auto after_delta = std::chrono::steady_clock::now();
-        const double compute_ms = std::chrono::duration<double, std::milli>(after_dangling - start).count();
-        const double apply_ms   = std::chrono::duration<double, std::milli>(after_delta - after_dangling).count();
-        const double total_ms   = compute_ms + apply_ms;
+        // Collect per-worker metrics sent immediately after DELTA_REPORT.
+        std::vector<WorkerMetrics> worker_metrics(config.num_workers);
+        for (const auto& worker : workers) {
+            const Message msg = recv_message(worker.fd);
+            expect_type(msg, MsgType::METRICS, "worker metrics");
+            const auto m = deserialize_worker_metrics(msg.payload);
+            require(m.worker_id < config.num_workers, "metrics worker_id out of range");
+            worker_metrics[m.worker_id] = m;
+        }
+
+        const double total_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count();
 
         log_csv << iteration << ","
                 << std::setprecision(17) << global_delta << ","
                 << global_dangling << ","
-                << compute_ms << ","
-                << apply_ms << ","
                 << total_ms << "\n";
 
-        std::cout << "iter " << iteration
-                  << ": delta=" << std::setprecision(8) << std::scientific << global_delta
-                  << " dangling=" << global_dangling
-                  << " total_ms=" << std::fixed << total_ms << std::defaultfloat << std::endl;
+        for (const auto& m : worker_metrics) {
+            metrics_csv << m.iteration << "," << m.worker_id << ","
+                        << m.compute_ms << "," << m.exchange_ms << ","
+                        << m.apply_ms << "," << m.contribs_bytes << ","
+                        << m.memory_mb << "\n";
+        }
+        metrics_csv.flush();
+
+        // Rich terminal table
+        std::cout << "\n── Iter " << std::setw(3) << iteration
+                  << " ─────────────────────────────────────────────────────\n"
+                  << std::scientific << std::setprecision(3)
+                  << "  δ=" << global_delta
+                  << "  dangling=" << global_dangling
+                  << std::fixed << std::setprecision(1)
+                  << "  total=" << total_ms << "ms\n"
+                  << "  " << std::setw(4) << "W"
+                  << std::setw(10) << "compute"
+                  << std::setw(10) << "exchange"
+                  << std::setw(10) << "apply"
+                  << std::setw(10) << "sent"
+                  << std::setw(8)  << "mem\n";
+        for (const auto& m : worker_metrics) {
+            const double mb_sent = static_cast<double>(m.contribs_bytes) / (1024.0 * 1024.0);
+            std::cout << "  W" << m.worker_id
+                      << std::setw(8)  << std::setprecision(1) << m.compute_ms  << "ms"
+                      << std::setw(8)  << m.exchange_ms << "ms"
+                      << std::setw(8)  << m.apply_ms    << "ms"
+                      << std::setw(8)  << std::setprecision(2) << mb_sent       << "MB"
+                      << std::setw(6)  << m.memory_mb   << "MB\n";
+        }
+        std::cout << std::defaultfloat << std::flush;
 
         if (global_delta < config.convergence_threshold || iteration == config.max_iterations) {
             broadcast_empty(workers, MsgType::STOP);

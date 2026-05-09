@@ -21,6 +21,7 @@ enum class MsgType : std::uint8_t {
     LOCAL_TOPK = 0x0B,
     SHUTDOWN = 0x0C,
     ABORT = 0x0D,
+    METRICS = 0x0E,
 };
 
 struct Message {
@@ -56,6 +57,16 @@ struct TopKEntry {
     double rank;
 };
 
+struct WorkerMetrics {
+    std::uint32_t worker_id;
+    std::uint32_t iteration;
+    double compute_ms;       // local vertex walk (walk_and_emit)
+    double exchange_ms;      // full CONTRIBS round-robin send+recv
+    double apply_ms;         // PageRank formula application
+    std::uint64_t contribs_bytes; // bytes sent as CONTRIBS this iteration
+    std::uint32_t memory_mb; // resident set size in MB
+};
+
 void send_message(int fd, MsgType type, const std::vector<std::uint8_t>& payload);
 Message recv_message(int fd);
 
@@ -76,5 +87,8 @@ ContribPayload deserialize_contribs(const std::vector<std::uint8_t>& payload);
 
 std::vector<std::uint8_t> serialize_topk(const std::vector<TopKEntry>& entries);
 std::vector<TopKEntry> deserialize_topk(const std::vector<std::uint8_t>& payload);
+
+std::vector<std::uint8_t> serialize_worker_metrics(const WorkerMetrics& m);
+WorkerMetrics deserialize_worker_metrics(const std::vector<std::uint8_t>& payload);
 
 }  // namespace dpr

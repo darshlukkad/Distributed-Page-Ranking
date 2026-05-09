@@ -235,4 +235,33 @@ std::vector<TopKEntry> deserialize_topk(const std::vector<std::uint8_t>& payload
     return entries;
 }
 
+// WorkerMetrics: worker_id(4) iteration(4) compute_ms(8) exchange_ms(8)
+//                apply_ms(8) contribs_bytes(8) memory_mb(4) = 44 bytes
+std::vector<std::uint8_t> serialize_worker_metrics(const WorkerMetrics& m) {
+    std::vector<std::uint8_t> buf;
+    buf.reserve(44);
+    append_integral(buf, m.worker_id);
+    append_integral(buf, m.iteration);
+    append_double(buf, m.compute_ms);
+    append_double(buf, m.exchange_ms);
+    append_double(buf, m.apply_ms);
+    append_integral(buf, m.contribs_bytes);
+    append_integral(buf, m.memory_mb);
+    return buf;
+}
+
+WorkerMetrics deserialize_worker_metrics(const std::vector<std::uint8_t>& payload) {
+    require_payload_size(payload, 44);
+    size_t offset = 0;
+    WorkerMetrics m{};
+    m.worker_id      = read_integral<std::uint32_t>(payload, offset);
+    m.iteration      = read_integral<std::uint32_t>(payload, offset);
+    m.compute_ms     = read_double(payload, offset);
+    m.exchange_ms    = read_double(payload, offset);
+    m.apply_ms       = read_double(payload, offset);
+    m.contribs_bytes = read_integral<std::uint64_t>(payload, offset);
+    m.memory_mb      = read_integral<std::uint32_t>(payload, offset);
+    return m;
+}
+
 }  // namespace dpr

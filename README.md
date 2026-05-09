@@ -88,6 +88,14 @@ make -j4
 make all
 ```
 
+### Quickest verified run (localhost, sample graph)
+
+```bash
+./scripts/run_local_demo.sh
+```
+
+Builds both binaries, preprocesses `data/sample/twitter_sample_snap.txt`, starts 1 coordinator + 4 workers on `127.0.0.1`, and writes `demo_out/top_k.txt`, `demo_out/top_influencers.txt`, and `demo_out/iteration_log.csv`.
+
 ---
 
 ## Quick Start

@@ -104,6 +104,10 @@ scp data/partitions/partition_0.bin user@192.168.1.11:~/partition_0.bin
 scp data/partitions/partition_1.bin user@192.168.1.12:~/partition_1.bin
 scp data/partitions/partition_2.bin user@192.168.1.13:~/partition_2.bin
 scp data/partitions/partition_3.bin user@192.168.1.14:~/partition_3.bin
+scp data/partitions/partition_4.bin user@192.168.1.15:~/partition_4.bin
+scp data/partitions/partition_5.bin user@192.168.1.16:~/partition_5.bin
+scp data/partitions/partition_6.bin user@192.168.1.17:~/partition_6.bin
+scp data/partitions/partition_7.bin user@192.168.1.18:~/partition_7.bin
 ```
 
 ### Step 2 — Edit cluster.conf
@@ -111,7 +115,7 @@ scp data/partitions/partition_3.bin user@192.168.1.14:~/partition_3.bin
 ```ini
 coordinator_host = 192.168.1.10
 coordinator_port = 9000
-num_workers      = 4
+num_workers      = 8
 damping_factor   = 0.85
 convergence_threshold = 1e-6
 max_iterations   = 100
@@ -132,6 +136,22 @@ port = 9003
 [worker_3]
 host = 192.168.1.14
 port = 9004
+
+[worker_4]
+host = 192.168.1.15
+port = 9005
+
+[worker_5]
+host = 192.168.1.16
+port = 9006
+
+[worker_6]
+host = 192.168.1.17
+port = 9007
+
+[worker_7]
+host = 192.168.1.18
+port = 9008
 ```
 
 ### Step 3 — Start the cluster
@@ -147,6 +167,10 @@ Start the coordinator first, then workers in any order:
 ./worker --id 1 --config cluster.conf --partition partition_1.bin
 ./worker --id 2 --config cluster.conf --partition partition_2.bin
 ./worker --id 3 --config cluster.conf --partition partition_3.bin
+./worker --id 4 --config cluster.conf --partition partition_4.bin
+./worker --id 5 --config cluster.conf --partition partition_5.bin
+./worker --id 6 --config cluster.conf --partition partition_6.bin
+./worker --id 7 --config cluster.conf --partition partition_7.bin
 ```
 
 ### Step 4 — Post-process results
@@ -171,6 +195,10 @@ All runtime machines connected via **Gigabit Ethernet switch** (no Wi-Fi). Set s
 | Worker 1 | 192.168.1.12 |
 | Worker 2 | 192.168.1.13 |
 | Worker 3 | 192.168.1.14 |
+| Worker 4 | 192.168.1.15 |
+| Worker 5 | 192.168.1.16 |
+| Worker 6 | 192.168.1.17 |
+| Worker 7 | 192.168.1.18 |
 
 Verify connectivity before starting:
 

@@ -2,7 +2,7 @@
 
 ## Project Context
 
-Distributed PageRank on the Twitter-2010 follow graph (~41.6M nodes, 1.47B edges) across a cluster of 5 machines communicating over raw TCP sockets. 13-member team split into 4 implementation teams.
+Distributed PageRank on the Twitter-2010 follow graph (~41.6M nodes, 1.47B edges) across a cluster of 9 machines communicating over raw TCP sockets. 13-member team split into 4 implementation teams.
 
 **Code freeze:** May 15 | **Presentation:** May 19
 
@@ -21,12 +21,12 @@ Distributed PageRank on the Twitter-2010 follow graph (~41.6M nodes, 1.47B edges
 
 ## Machines Required
 
-### Runtime cluster (5 machines)
+### Runtime cluster (9 machines)
 
 | Role | Count | RAM | Free Disk | Notes |
 |---|---|---|---|---|
 | Coordinator | 1 | 4 GB+ | 2 GB | Idle during computation — any laptop works |
-| Worker | 4 | **8 GB+** | 5 GB each | Use the 4 beefiest machines |
+| Worker | 8 | **4 GB+** | 3 GB each | Each holds one ~800 MB partition |
 
 ### Preprocessing machine (offline, one-time)
 
@@ -34,7 +34,7 @@ Distributed PageRank on the Twitter-2010 follow graph (~41.6M nodes, 1.47B edges
 |---|---|---|---|---|
 | Preprocessing | 1 | 4 GB+ | **30 GB** | Can be one of the 13 dev laptops, not needed at demo |
 
-With 13 team laptops, there are more than enough machines. Pick the 4 with the most RAM for workers.
+With 13 team laptops, 9 are used at runtime and 4 remain for development. Pick the 8 with the most RAM for workers — though N=8 only needs 1 GB RAM per worker so nearly any modern laptop qualifies.
 
 ---
 
@@ -47,7 +47,7 @@ With 13 team laptops, there are more than enough machines. Pick the 4 with the m
 | `twitter-2010.txt.gz` | 5.6 GB | Download from SNAP — start immediately |
 | `twitter-2010-ids.csv.gz` | ~0.3 GB | ID mapping for post-processing |
 | Temp sort buffers (during preprocessing) | ~8–12 GB | Cleared after partition files are written |
-| Output: 4 × `partition_K.bin` | 6.4 GB | 4 × ~1.6 GB, one per worker |
+| Output: 8 × `partition_K.bin` | 6.4 GB | 8 × ~800 MB, one per worker |
 | Pokec dataset (development/testing) | ~0.3 GB | Small graph for Week 1 dev |
 | **Total** | **~25 GB** | Round up — keep 30 GB free |
 
@@ -55,10 +55,10 @@ With 13 team laptops, there are more than enough machines. Pick the 4 with the m
 
 | Item | Size | Notes |
 |---|---|---|
-| `partition_K.bin` | ~1.6 GB | Its own slice only |
+| `partition_K.bin` | ~800 MB | Its own slice only |
 | Worker binary | ~5 MB | |
-| `result_worker_K.txt` (output) | ~200 MB | Written after convergence |
-| **Total** | **~2 GB** | Keep 5 GB free for headroom |
+| `result_worker_K.txt` (output) | ~100 MB | Written after convergence |
+| **Total** | **~1 GB** | Keep 3 GB free for headroom |
 
 ### Coordinator machine
 
@@ -75,8 +75,8 @@ With 13 team laptops, there are more than enough machines. Pick the 4 with the m
 |---|---|
 | Preprocessing machine | 30 GB free |
 | Coordinator | 2 GB free |
-| 4 × Worker | 5 GB free each |
-| **Total** | **~52 GB** |
+| 8 × Worker | 3 GB free each |
+| **Total** | **~56 GB** |
 
 ---
 
@@ -86,12 +86,12 @@ With 13 team laptops, there are more than enough machines. Pick the 4 with the m
 
 | Item | Spec | Cost | Notes |
 |---|---|---|---|
-| Unmanaged Gigabit switch | 8-port, e.g. TP-Link TL-SG108 or Netgear GS308 | ~$20–25 | 8 ports = 5 laptops + room to spare |
-| Ethernet cables | Cat5e or Cat6, 1–2m, ×5 | ~$10 for a pack | One per laptop |
+| Unmanaged Gigabit switch | **16-port**, e.g. TP-Link TL-SG116 or Netgear GS316 | ~$35–45 | 9 machines need 9 ports — 8-port won't fit |
+| Ethernet cables | Cat5e or Cat6, 1–2m, ×9 | ~$15 for a pack | One per laptop |
 | USB-C → Gigabit Ethernet adapters | Must say Gigabit / 1000 Mbps | ~$15–20 each | Required for every MacBook — verify Gigabit |
-| Power strip | 6+ outlets | ~$10 | Switch + 5 laptop chargers |
+| Power strip | 8+ outlets | ~$12 | Switch + 9 laptop chargers |
 
-**Total hardware cost: ~$50–80**
+**Total hardware cost: ~$60–100**
 
 > **Warning:** Cheap USB-C adapters are often only 100 Mbps. Check the box says Gigabit. A 100 Mbps adapter is 10× slower than a real Gigabit link and will visibly hurt scaling results.
 
@@ -102,65 +102,49 @@ With 13 team laptops, there are more than enough machines. Pick the 4 with the m
 ║              DEMO NETWORK TOPOLOGY — GIGABIT ETHERNET OVER SWITCH               ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 
-                   ┌──────────────────────────────┐
-                   │   8-PORT GIGABIT SWITCH       │
-                   │   TP-Link TL-SG108            │
-                   │   (unmanaged, plug-and-play)  │
-                   │                               │
-                   │  [1][2][3][4][5][6][7][8]     │
-                   └──┬──┬──┬──┬──┬───────────────┘
-                      │  │  │  │  │  Cat6 Ethernet cables (1–2m)
-                      │  │  │  │  │
-       ┌──────────────┘  │  │  │  └──────────────────────┐
-       │        ┌────────┘  │  └──────────┐              │
-       │        │       ┌───┘             │              │
-       ▼        ▼       ▼                 ▼              ▼
-┌──────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
-│COORDINATOR│ │  WORKER 0  │ │  WORKER 1  │ │  WORKER 2  │ │  WORKER 3  │
-│          │ │            │ │            │ │            │ │            │
-│192.168.  │ │192.168.    │ │192.168.    │ │192.168.    │ │192.168.    │
-│  1.10    │ │  1.11      │ │  1.12      │ │  1.13      │ │  1.14      │
-│          │ │            │ │            │ │            │ │            │
-│RAM: 4GB+ │ │RAM:  8GB+  │ │RAM:  8GB+  │ │RAM:  8GB+  │ │RAM:  8GB+  │
-│Disk: 2GB │ │Disk: 5GB   │ │Disk: 5GB   │ │Disk: 5GB   │ │Disk: 5GB   │
-│          │ │            │ │            │ │            │ │            │
-│Port: 9000│ │Port: 9001  │ │Port: 9002  │ │Port: 9003  │ │Port: 9004  │
-│          │ │partition   │ │partition   │ │partition   │ │partition   │
-│          │ │_0.bin      │ │_1.bin      │ │_2.bin      │ │_3.bin      │
-│          │ │(1.6 GB)    │ │(1.6 GB)    │ │(1.6 GB)    │ │(1.6 GB)    │
-└──────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘
+        ┌─────────────────────────────────────────────────────────────────┐
+        │   16-PORT GIGABIT SWITCH                                        │
+        │   TP-Link TL-SG116  (unmanaged, plug-and-play)                 │
+        │                                                                 │
+        │  [1][2][3][4][5][6][7][8][9][10][11][12][13][14][15][16]       │
+        └──┬──┬──┬──┬──┬──┬──┬──┬──┬────────────────────────────────────┘
+           │  │  │  │  │  │  │  │  │   Cat6 Ethernet cables (1–2m)
+           │  │  │  │  │  │  │  │  │
+      ┌────┘  │  │  │  │  │  │  │  └─────────────────────────────────┐
+      │  ┌────┘  │  │  │  │  │  └──────────────────────┐             │
+      │  │  ┌────┘  │  │  │  └─────────────┐           │             │
+      │  │  │  ┌────┘  │  └──────┐         │           │             │
+      │  │  │  │    ┌──┘         │         │           │             │
+      ▼  ▼  ▼  ▼    ▼            ▼         ▼           ▼             ▼
+  COORD  W0   W1   W2           W3        W4          W5    W6       W7
+  .1.10 .1.11 .1.12 .1.13      .1.14     .1.15       .1.16 .1.17   .1.18
+  4GB+  4GB+  4GB+  4GB+       4GB+      4GB+        4GB+  4GB+    4GB+
+  p9000 p9001 p9002 p9003      p9004     p9005       p9006 p9007   p9008
+        800MB 800MB 800MB      800MB     800MB       800MB 800MB   800MB
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   LOGICAL CONNECTIONS (over the same physical switch):
 
-  Control plane (TCP port 9000):
-  Coordinator ◄──── HELLO / READY / DELTA_REPORT / DANGLING_REPORT ──── Worker 0
-  Coordinator ◄──────────────────────────────────────────────────────── Worker 1
-  Coordinator ◄──────────────────────────────────────────────────────── Worker 2
-  Coordinator ◄──────────────────────────────────────────────────────── Worker 3
-  Coordinator ────── START_ITERATION / GLOBAL_DANGLING / STOP ────────► All
+  Control plane (TCP port 9000)  — 8 connections:
+  Coordinator ◄── HELLO / DELTA_REPORT / DANGLING_REPORT ──► Worker 0–7 (each)
+  Coordinator ──── START_ITERATION / GLOBAL_DANGLING / STOP ──────────► All
 
-  Data plane (CONTRIBS messages, ~hundreds MB per iteration):
-  Worker 0 ◄──────────────────────────────────────────────────────────► Worker 1
-  Worker 0 ◄──────────────────────────────────────────────────────────► Worker 2
-  Worker 0 ◄──────────────────────────────────────────────────────────► Worker 3
-  Worker 1 ◄──────────────────────────────────────────────────────────► Worker 2
-  Worker 1 ◄──────────────────────────────────────────────────────────► Worker 3
-  Worker 2 ◄──────────────────────────────────────────────────────────► Worker 3
-                              6 bidirectional connections
+  Data plane (CONTRIBS messages)  — 28 connections:
+  Every worker pair (i, j) where i < j has one bidirectional TCP connection
+  8 × 7 / 2 = 28 connections total
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   TCP CONNECTIONS SUMMARY:
-  Control plane  4 connections   Worker i → Coordinator (port 9000)
-  Data plane     6 connections   Worker i ↔ Worker j, i < j (ports 9001–9004)
+  Control plane   8 connections   Worker i → Coordinator (port 9000)
+  Data plane     28 connections   Worker i ↔ Worker j, i < j (ports 9001–9008)
                  ─────────────
-                 10 total TCP connections in the cluster
+                 36 total TCP connections in the cluster
 
   SWITCH BANDWIDTH:
   1 Gbps per port, full-duplex, non-blocking
-  All 5 machines communicate simultaneously — switch handles in parallel
+  All 9 machines communicate simultaneously — switch handles in parallel
   Effective throughput per worker-to-worker link: ~125 MB/s
 ```
 
@@ -190,13 +174,17 @@ Control Panel → Network → Ethernet → Properties → IPv4
 → IP: 192.168.1.1x   Subnet: 255.255.255.0   Gateway: (leave blank)
 ```
 
-| Machine | IP |
-|---|---|
-| Coordinator | 192.168.1.10 |
-| Worker 0 | 192.168.1.11 |
-| Worker 1 | 192.168.1.12 |
-| Worker 2 | 192.168.1.13 |
-| Worker 3 | 192.168.1.14 |
+| Machine | IP | Port |
+|---|---|---|
+| Coordinator | 192.168.1.10 | 9000 |
+| Worker 0 | 192.168.1.11 | 9001 |
+| Worker 1 | 192.168.1.12 | 9002 |
+| Worker 2 | 192.168.1.13 | 9003 |
+| Worker 3 | 192.168.1.14 | 9004 |
+| Worker 4 | 192.168.1.15 | 9005 |
+| Worker 5 | 192.168.1.16 | 9006 |
+| Worker 6 | 192.168.1.17 | 9007 |
+| Worker 7 | 192.168.1.18 | 9008 |
 
 Verify connectivity before every run:
 ```bash
@@ -303,32 +291,32 @@ The preprocessor streams through the gzip file — the full 26 GB is never writt
 ## Pre-Demo Checklist
 
 ### Hardware (buy by May 10)
-- [ ] 8-port Gigabit switch purchased and tested
-- [ ] 5 × Cat6 Ethernet cables (test each — LED on switch port lights up green)
-- [ ] USB-C to Gigabit Ethernet adapters for every MacBook in cluster (verify Gigabit)
-- [ ] Power strip with enough outlets
+- [ ] **16-port** Gigabit switch purchased and tested (8-port is not enough for 9 machines)
+- [ ] 9 × Cat6 Ethernet cables (test each — LED on switch port lights up green)
+- [ ] USB-C to Gigabit Ethernet adapters for every MacBook in cluster (verify Gigabit, not 100 Mbps)
+- [ ] Power strip with 8+ outlets
 
 ### Software (complete by May 14)
-- [ ] `xcode-select --install` run on all 5 cluster Macs
-- [ ] Binaries compiled natively on each of the 5 cluster Macs
-- [ ] Firewall allowed or disabled on all 5 Macs
+- [ ] `xcode-select --install` run on all 9 cluster Macs
+- [ ] Binaries compiled natively on each of the 9 cluster Macs
+- [ ] Firewall allowed or disabled on all 9 Macs
 - [ ] `signal(SIGPIPE, SIG_IGN)` in coordinator and worker `main()`
 
 ### Data (complete by May 12)
 - [ ] Twitter-2010 dataset downloaded
-- [ ] Preprocessing complete — 4 × `partition_K.bin` files generated
+- [ ] Preprocessing complete — 8 × `partition_K.bin` files generated (~800 MB each)
 - [ ] Partition files copied to each worker laptop (`scp` or USB)
 - [ ] `twitter-2010-ids.csv.gz` on coordinator machine
 
 ### Network (complete by May 13)
-- [ ] Static IPs set on all 5 machines
+- [ ] Static IPs set on all 9 machines (192.168.1.10 through 192.168.1.18)
 - [ ] `ping` test: every machine pings every other — all reply
 - [ ] Port test: `nc -l 9001` on Worker 0, `nc 192.168.1.11 9001` from Coordinator — connects
-- [ ] `cluster.conf` has correct static IPs for all machines
+- [ ] `cluster.conf` has correct static IPs for all 9 machines
 
 ### Dry run (May 18 — day before presentation)
-- [ ] Full cluster boots: coordinator starts, 4 workers register, mesh forms
+- [ ] Full cluster boots: coordinator starts, 8 workers register, mesh forms
 - [ ] Run 10 iterations on small subgraph — coordinator logs look correct
 - [ ] `sum(ranks) ≈ 1.0` after first iteration confirmed
 - [ ] `top_k.txt` written successfully
-- [ ] All 5 machines stay connected for a full run with no crashes
+- [ ] All 9 machines stay connected for a full run with no crashes

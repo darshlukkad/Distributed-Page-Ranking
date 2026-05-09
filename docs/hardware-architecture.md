@@ -193,15 +193,18 @@ Every BSP iteration follows this sequence:
 
 ---
 
-## Key Numbers (Twitter-2010, N=4)
+## Key Numbers (Twitter-2010, N=8)
 
 | Metric | Value |
 |---|---|
 | Total vertices | 41,652,230 |
 | Total edges | 1,468,364,884 |
-| Vertices per worker | ~10,413,058 |
-| Edges per worker | ~367,091,221 |
-| RAM per worker | ~1.85 GB |
-| Partition file size | ~1.59 GB |
+| Number of workers | 8 |
+| Vertices per worker | ~5,206,529 |
+| Edges per worker | ~183,545,611 |
+| RAM per worker | ~922 MB |
+| Partition file size | ~797 MB |
 | Expected iterations to convergence | 30–60 |
-| TCP connections in cluster | 10 |
+| Control-plane TCP connections | 8 |
+| Data-plane TCP connections | 28 |
+| Total TCP connections in cluster | 36 |

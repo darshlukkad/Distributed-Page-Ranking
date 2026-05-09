@@ -1,0 +1,30 @@
+# Dataset and partition files — too large for version control
+data/
+*.bin
+*.gz
+*.csv
+
+# Build artifacts
+build/
+*.o
+*.a
+*.out
+coordinator
+worker
+sequential_pagerank
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and results
+*.log
+result_worker_*.txt
+top_k.txt
+top_influencers.txt
+iteration_log.csv
+partition_manifest.json
+
+# macOS
+.DS_Store

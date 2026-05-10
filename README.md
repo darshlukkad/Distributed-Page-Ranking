@@ -221,6 +221,102 @@ All outputs are written to the directory passed via `--output-dir`.
 | `iteration_log.csv` | Per-iteration convergence delta and total wall time |
 | `worker_metrics.csv` | Per-worker per-iteration breakdown: compute\_ms, exchange\_ms, apply\_ms, bytes sent, memory MB |
 
+## Cross-Machine Test (2 laptops, N=4 workers)
+
+**Topology:** Machine A runs coordinator + workers 0 and 1. Machine B runs workers 2 and 3.
+
+### Step 0 — Assign static IPs
+
+Connect both laptops to the same switch with Ethernet.
+
+On **Machine A** (macOS): System Settings → Network → Ethernet → Details → TCP/IP → Manual
+- IP: `192.168.1.10`   Subnet: `255.255.255.0`   Gateway: (leave blank)
+
+On **Machine B**:
+- IP: `192.168.1.11`   Subnet: `255.255.255.0`   Gateway: (leave blank)
+
+Verify: `ping 192.168.1.11` from Machine A should reply.
+
+### Step 1 — Build on both machines
+
+Clone the repo on Machine B and build:
+
+```bash
+git clone https://github.com/darshlukkad/Distributed-Page-Ranking.git
+cd Distributed-Page-Ranking
+make all
+```
+
+### Step 2 — Preprocess the graph (on Machine A only)
+
+**Sample graph (fast, no extra deps):**
+```bash
+python3 scripts/preprocessor.py \
+    --input data/sample/twitter_sample_snap.txt \
+    --workers 4 --output-dir data/partitions/
+```
+
+**Full Twitter-2010 graph (requires numpy, ~20 GB disk, 15–30 min):**
+```bash
+# Download from: https://snap.stanford.edu/data/twitter-2010.html
+# Place twitter-2010.txt.gz in data/
+pip3 install numpy   # or: brew install numpy
+python3 scripts/preprocessor_large.py \
+    --input data/twitter-2010.txt.gz \
+    --workers 4 --output-dir data/partitions/
+```
+
+### Step 3 — Copy partitions and config to Machine B
+
+```bash
+# From Machine A — copy partitions for workers 2 and 3
+scp data/partitions/partition_2.bin user@192.168.1.11:~/Distributed-Page-Ranking/data/partitions/
+scp data/partitions/partition_3.bin user@192.168.1.11:~/Distributed-Page-Ranking/data/partitions/
+scp cluster.2machine.conf           user@192.168.1.11:~/Distributed-Page-Ranking/
+```
+
+### Step 4 — Start the cluster
+
+**On Machine B first** (workers connect to coordinator; coordinator must be ready first):
+```bash
+./scripts/start_machine_b.sh \
+    --config cluster.2machine.conf \
+    --partition-dir data/partitions/ \
+    --output-dir output/
+```
+
+**Then on Machine A:**
+```bash
+./scripts/start_machine_a.sh \
+    --config cluster.2machine.conf \
+    --partition-dir data/partitions/ \
+    --output-dir output/
+```
+
+### Step 5 — Optional: live monitoring
+
+```bash
+# On each machine (separate terminal), before starting workers
+python3 scripts/monitoring_agent.py --id 0 --log-dir output/   # Machine A, agent for W0
+python3 scripts/monitoring_agent.py --id 1 --log-dir output/   # Machine A, agent for W1
+python3 scripts/monitoring_agent.py --id 2 --log-dir output/   # Machine B, agent for W2
+python3 scripts/monitoring_agent.py --id 3 --log-dir output/   # Machine B, agent for W3
+
+# Dashboard from any machine
+python3 scripts/monitor.py --config cluster.2machine.conf
+```
+
+### Step 6 — Post-process
+
+```bash
+python3 scripts/postprocess.py \
+    --top-k  output/top_k.txt \
+    --id-map data/twitter-2010-ids.csv.gz \
+    --output output/top_influencers.txt
+```
+
+---
+
 ## Monitoring
 
 Two optional scripts for live visibility during a run:
